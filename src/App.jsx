@@ -7,42 +7,47 @@ const formatCOP = (val) => new Intl.NumberFormat('es-CO', {
   minimumFractionDigits: 0 
 }).format(val || 0);
 
+// Deudas iniciales vacías para iniciar desde cero si no hay datos guardados
+const INITIAL_DEBTS = [];
+const INITIAL_INCOMES = [];
+const INITIAL_EXPENSES = [];
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isDarkMode, setIsDarkMode] = useState(true);
 
-  // Estados con persistencia en localStorage para Marlin (Inician vacíos o guardados)
+  // Estados con persistencia en localStorage
   const [debts, setDebts] = useState(() => {
     const saved = localStorage.getItem('finanzas_marlin_debts');
-    if (!saved) return [];
+    if (!saved) return INITIAL_DEBTS;
     try {
       const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) ? parsed : [];
+      return Array.isArray(parsed) ? parsed : INITIAL_DEBTS;
     } catch {
-      return [];
+      return INITIAL_DEBTS;
     }
   });
 
   const [incomes, setIncomes] = useState(() => {
     const saved = localStorage.getItem('finanzas_marlin_incomes');
-    if (!saved) return [];
+    if (!saved) return INITIAL_INCOMES;
     try {
       const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) ? parsed : [];
+      return Array.isArray(parsed) ? parsed : INITIAL_INCOMES;
     } catch {
-      return [];
+      return INITIAL_INCOMES;
     }
   });
 
   const [expenses, setExpenses] = useState(() => {
     const saved = localStorage.getItem('finanzas_marlin_expenses');
-    if (!saved) return [];
+    if (!saved) return INITIAL_EXPENSES;
     try {
       const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) ? parsed : [];
+      return Array.isArray(parsed) ? parsed : INITIAL_EXPENSES;
     } catch {
-      return [];
+      return INITIAL_EXPENSES;
     }
   });
 
@@ -69,7 +74,7 @@ export default function App() {
   const [newIncome, setNewIncome] = useState({ concept: '', amount: '', frequency: 'semanal' });
 
   const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
-  const [newExpense, setNewExpense] = useState({ concept: '', amount: '', frequency: 'semanal', category: 'Subsistencia', dueDate: '' });
+  const [newExpense, setNewExpense] = useState({ concept: '', amount: '', frequency: 'semanal', category: 'Fijo', dueDate: '' });
 
   // Modales Editar
   const [editingExpense, setEditingExpense] = useState(null);
@@ -80,6 +85,7 @@ export default function App() {
   const [aiAnalysis, setAiAnalysis] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
 
+  // Bandera para evitar auto-sync en la primera carga
   const isFirstRender = useRef(true);
 
   useEffect(() => {
@@ -98,7 +104,6 @@ export default function App() {
     localStorage.setItem('finanzas_marlin_reserve', JSON.stringify(emergencyFund));
   }, [emergencyFund]);
 
-  // AUTO-SINCRONIZACIÓN CON GOOGLE DRIVE
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
@@ -109,7 +114,7 @@ export default function App() {
 
     const timer = setTimeout(() => {
       syncToGoogleDrive(incomes, expenses, debts, emergencyFund, true);
-    }, 1200);
+    }, 1500);
 
     return () => clearTimeout(timer);
   }, [incomes, expenses, debts, emergencyFund, sheetsUrl]);
@@ -202,35 +207,6 @@ export default function App() {
     return { weeklySubsistence, monthlyFixed, monthlyTotal };
   }, [expenses]);
 
-  const totals = useMemo(() => {
-    const totalIncome = calculatedIncomes.monthlyTotal;
-    const totalExpenses = calculatedExpenses.monthlyTotal;
-    const totalDebtBalance = debts.reduce((sum, item) => sum + Number(item.balance), 0);
-    const totalMinDebtPayments = debts.reduce((sum, item) => sum + Number(item.minPayment), 0);
-
-    const weeklyMinDebtPayments = totalMinDebtPayments / 4.3333;
-    const weeklyGrossIncome = calculatedIncomes.weeklyTotal;
-    const weeklySubsistence = calculatedExpenses.weeklySubsistence;
-    const weeklyNetAvailable = weeklyGrossIncome - weeklySubsistence;
-
-    const netCashflow = totalIncome - totalExpenses - totalMinDebtPayments;
-    const debtToIncomeRatio = totalIncome > 0 ? (totalMinDebtPayments / totalIncome) * 100 : 0;
-
-    return {
-      totalIncome,
-      totalExpenses,
-      totalDebtBalance,
-      totalMinDebtPayments,
-      netCashflow,
-      debtToIncomeRatio,
-      weeklyGrossIncome,
-      weeklySubsistence,
-      weeklyNetAvailable,
-      weeklyMinDebtPayments
-    };
-  }, [calculatedIncomes, calculatedExpenses, debts]);
-
-  // Clasificación de pasivos
   const categorizedDebts = useMemo(() => {
     const isCard = (debt) => {
       const cat = (debt.category || '').toLowerCase();
@@ -254,7 +230,9 @@ export default function App() {
       totalPaidInstallmentsCount += paidInst;
     });
 
-    const installmentsProgressPct = totalInstallmentsCount > 0 ? Math.min(100, Math.round((totalPaidInstallmentsCount / totalInstallmentsCount) * 100)) : 0;
+    const installmentsProgressPct = totalInstallmentsCount > 0 
+      ? Math.min(100, Math.round((totalPaidInstallmentsCount / totalInstallmentsCount) * 100)) 
+      : 0;
 
     return {
       cards,
@@ -267,6 +245,40 @@ export default function App() {
       }
     };
   }, [debts]);
+
+  const totals = useMemo(() => {
+    const totalIncome = calculatedIncomes.monthlyTotal;
+    const totalExpenses = calculatedExpenses.monthlyTotal;
+    const totalDebtBalance = debts.reduce((sum, item) => sum + Number(item.balance), 0);
+    const totalMinDebtPayments = debts.reduce((sum, item) => sum + Number(item.minPayment), 0);
+
+    // Cuotas mensuales específicas de préstamos y tarjetas
+    const totalLoansMinPayment = categorizedDebts.loans.reduce((sum, item) => sum + Number(item.minPayment), 0);
+    const totalCardsMinPayment = categorizedDebts.cards.reduce((sum, item) => sum + Number(item.minPayment), 0);
+
+    const weeklyMinDebtPayments = totalMinDebtPayments / 4.3333;
+    const weeklyGrossIncome = calculatedIncomes.weeklyTotal;
+    const weeklySubsistence = calculatedExpenses.weeklySubsistence;
+    const weeklyNetAvailable = weeklyGrossIncome - weeklySubsistence;
+
+    const netCashflow = totalIncome - totalExpenses - totalMinDebtPayments;
+    const debtToIncomeRatio = totalIncome > 0 ? (totalMinDebtPayments / totalIncome) * 100 : 0;
+
+    return {
+      totalIncome,
+      totalExpenses,
+      totalDebtBalance,
+      totalMinDebtPayments,
+      totalLoansMinPayment,
+      totalCardsMinPayment,
+      netCashflow,
+      debtToIncomeRatio,
+      weeklyGrossIncome,
+      weeklySubsistence,
+      weeklyNetAvailable,
+      weeklyMinDebtPayments
+    };
+  }, [calculatedIncomes, calculatedExpenses, debts, categorizedDebts]);
 
   const sortedDebts = useMemo(() => {
     const sorted = [...debts];
@@ -343,7 +355,7 @@ export default function App() {
     };
 
     setExpenses(prev => [...prev, expObj]);
-    setNewExpense({ concept: '', amount: '', frequency: 'semanal', category: 'Subsistencia', dueDate: '' });
+    setNewExpense({ concept: '', amount: '', frequency: 'semanal', category: 'Fijo', dueDate: '' });
     setShowAddExpenseModal(false);
     showNotification('🛒 Egreso guardado (Sincronizando...)');
   };
@@ -480,14 +492,6 @@ export default function App() {
     showNotification('🗑️ Ingreso eliminado');
   };
 
-  const handleClearAllData = () => {
-    setIncomes([]);
-    setExpenses([]);
-    setDebts([]);
-    setEmergencyFund({ current: 0, targetMonths: 3 });
-    showNotification('✨ Aplicación reiniciada completamente en cero', 'success');
-  };
-
   const handleSaveSheetsUrl = () => {
     localStorage.setItem('finanzas_marlin_sheets_url', sheetsUrl);
     showNotification('☁️ URL de Google Apps Script guardada en memoria local');
@@ -507,12 +511,12 @@ export default function App() {
       const data = await res.json();
 
       if (data) {
-        setIncomes(data.incomes && Array.isArray(data.incomes) ? data.incomes : []);
-        setExpenses(data.expenses && Array.isArray(data.expenses) ? data.expenses : []);
-        setDebts(data.debts && Array.isArray(data.debts) ? data.debts : []);
+        if (data.incomes && Array.isArray(data.incomes)) setIncomes(data.incomes);
+        if (data.expenses && Array.isArray(data.expenses)) setExpenses(data.expenses);
+        if (data.debts && Array.isArray(data.debts)) setDebts(data.debts);
         if (data.emergencyFund && data.emergencyFund.current !== undefined) setEmergencyFund(data.emergencyFund);
 
-        showNotification('🔄 ¡Base de datos sincronizada desde Google Sheets!');
+        showNotification('🔄 ¡Base de datos cargada desde Google Sheets!');
       } else {
         showNotification('⚠️ La respuesta de la nube estaba vacía', 'error');
       }
@@ -524,6 +528,7 @@ export default function App() {
     }
   };
 
+  // AUDITORÍA IA ASESOR
   const handleGenerateAiDiagnostic = async () => {
     setAiLoading(true);
     setAiAnalysis('');
@@ -532,21 +537,20 @@ export default function App() {
       const topTarget = sortedDebts.length > 0 ? sortedDebts[0] : null;
       const strategyName = payoffStrategy === 'snowball' ? 'Bola de Nieve (Atacar menor saldo primero)' : 'Avalancha (Atacar mayor tasa primero)';
 
-      let reportText = `🛡️ 1. ANÁLISIS DE COBERTURA Y CALENDARIO DE GASTOS
-• Producido Semanal Bruto: ${formatCOP(totals.weeklyGrossIncome)} COP
-• Subsistencia / Alimentación Diaria: -${formatCOP(totals.weeklySubsistence)} COP
-• Flujo Limpio Semanal Restante: ${formatCOP(totals.weeklyNetAvailable)} COP
+      let reportText = `🛡️ 1. DIAGNÓSTICO FINANCIERO INTEGRAL MARLIN
+• Ingresos Mensuales Consolidados: ${formatCOP(totals.totalIncome)} COP
+• Presupuesto de Gastos Mensuales: -${formatCOP(totals.totalExpenses)} COP
+• Compromiso en Préstamos Bancarios: ${formatCOP(totals.totalLoansMinPayment)} COP/mes
+• Compromiso en Tarjetas de Crédito: ${formatCOP(totals.totalCardsMinPayment)} COP/mes
+• Flujo de Caja Libre Resultante: ${formatCOP(totals.netCashflow)} COP/mes
 
-💡 Evaluación de Riesgo: Tu cobertura semanal actual es del ${totals.weeklyGrossIncome > 0 ? Math.round((totals.weeklySubsistence / totals.weeklyGrossIncome) * 100) : 0}%. Tu alimentación básica está resguardada antes de pagar cualquier cuota.
+💡 Evaluación: Tu nivel actual de compromiso de deudas representa un ${totals.debtToIncomeRatio.toFixed(1)}% de tus ingresos.
 
-🎯 2. PLAN DE DISTRIBUCIÓN Y DÍAS CLAVE DE PAGO
-• Reservar semanalmente para compromisos fijos: ${formatCOP(totals.weeklyMinDebtPayments)} COP/semana.
-
-⚡ 3. PASO A PASO PARA LIQUIDAR SU PRIMER PASIVO
+🎯 2. PLAN DE ATENCIÓN DE PASIVOS
 • Estrategia Activa: ${strategyName}
 ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
 • Saldo Pendiente: ${formatCOP(topTarget.balance)} COP | Cuota Mínima: ${formatCOP(topTarget.minPayment)} COP
-• Plan de Ataque: Aplica el abono extra mensual de ${formatCOP(extraAbono)} COP directo a este pasivo. En aprox. ${simulation.monthsAccelerated} quedarás 100% libre de deudas.` : '• ¡Felicitaciones Marlin! No tienes deudas pendientes registradas.'}`;
+• Recomendación: Asigna cualquier excedente mensual directo a este pasivo. Con tu plan acelerado podrías liberarte en aproximadamente ${simulation.monthsAccelerated}.` : '• ¡Excelente Marlin! No tienes deudas registradas en tu sistema.'}`;
 
       setAiAnalysis(reportText);
       setAiLoading(false);
@@ -620,7 +624,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
           <nav className="space-y-1.5">
             {[
               { id: 'dashboard', label: 'Centro de Control', icon: '🎯', badge: 'Principal' },
-              { id: 'ingresos', label: 'Ingresos & Subsistencia', icon: '💵', count: incomes.length },
+              { id: 'ingresos', label: 'Ingresos & Fuetes', icon: '💵', count: incomes.length },
               { id: 'gastos', label: 'Presupuesto de Gastos', icon: '🛒', count: expenses.length },
               { id: 'mapa', label: 'Ruta de Ataque', icon: '⚡', badge: 'Estrategia' },
               { id: 'pasivos', label: 'Gestor de Deudas', icon: '💳', count: debts.length },
@@ -706,7 +710,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                 )}
               </h2>
               <p className={`text-xs font-medium ${theme.textMuted}`}>
-                Gestión de Producido Semanal, Obligaciones Fijas y Avance de Cuotas
+                Consolidado Mensual de Ingresos, Presupuesto de Gastos y Deudas
               </p>
             </div>
           </div>
@@ -771,56 +775,79 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
             </div>
           )}
 
-          {/* VISTA 1: DASHBOARD PRINCIPAL */}
+          {/* VISTA 1: DASHBOARD PRINCIPAL - TARJETAS PERSONALIZADAS SOLICITADAS */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6">
               <div className={`p-6 rounded-3xl border shadow-xl relative overflow-hidden ${theme.cardBg}`}>
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6 pb-4 border-b border-slate-200 dark:border-slate-800">
                   <div>
                     <h3 className="text-sm font-black text-indigo-600 dark:text-amber-400 uppercase tracking-wider flex items-center gap-2">
-                      <span>🚰</span> Embudo del Producido Semanal de Marlin
+                      <span>📊</span> Consolidado Financiero Mensual de Marlin
                     </h3>
                     <p className={`text-xs ${theme.textMuted}`}>
-                      Desglose real de caja: Ingresos semanales menos mercado y subsistencia personal.
+                      Resumen general de tus ingresos, presupuesto de gastos y cuotas de pasivos al mes.
                     </p>
                   </div>
                   <span className="text-xs font-black bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-3 py-1 rounded-full border border-indigo-500/20">
-                    Sueldo & Alimentación Protegidos 🛡️
+                    Control Total 360° 🛡️
                   </span>
                 </div>
 
+                {/* 4 TARJETAS PRINCIPALES PERSONALIZADAS SEGÚN LA SOLICITUD DE MARLIN */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
+                  
+                  {/* Tarjeta 1: Total Ingresos Mensuales */}
                   <div className={`p-4 rounded-2xl border ${theme.subCardBg}`}>
-                    <span className={`text-[10px] font-bold block uppercase ${theme.textMuted}`}>1. Producido Semanal Bruto</span>
-                    <span className="text-xl font-black text-indigo-600 dark:text-indigo-400 font-mono">
-                      {formatCOP(totals.weeklyGrossIncome)}
+                    <span className={`text-[10px] font-bold block uppercase ${theme.textMuted}`}>
+                      1. Total Ingresos Mensuales
                     </span>
-                    <span className="text-[9px] text-slate-400 block mt-1">Plataformas y Conducción</span>
-                  </div>
-
-                  <div className="p-4 rounded-2xl border bg-rose-500/10 border-rose-500/20">
-                    <span className="text-[10px] font-bold text-rose-500 block uppercase">2. (-) Mercado y Subsistencia</span>
-                    <span className="text-xl font-black text-rose-500 font-mono">
-                      -{formatCOP(totals.weeklySubsistence)}
-                    </span>
-                    <span className="text-[9px] text-rose-400 block mt-1">Alimentación y gastos personales</span>
-                  </div>
-
-                  <div className="p-4 rounded-2xl border bg-emerald-500/10 border-emerald-500/20">
-                    <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 block uppercase">3. (=) Caja Disponible Semanal</span>
                     <span className="text-xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
-                      {formatCOP(totals.weeklyNetAvailable)}
+                      {formatCOP(totals.totalIncome)}
                     </span>
-                    <span className="text-[9px] text-emerald-500 block mt-1">Dinero limpio para fijos y créditos</span>
+                    <span className="text-[9px] text-emerald-500 block mt-1">
+                      Suma de todas tus fuentes de ingreso
+                    </span>
                   </div>
 
-                  <div className="p-4 rounded-2xl border bg-amber-500/10 border-amber-500/20">
-                    <span className="text-[10px] font-black text-amber-600 dark:text-amber-400 block uppercase">4. Provisión Cuotas Semanal</span>
-                    <span className="text-xl font-black text-amber-500 font-mono">
-                      {formatCOP(totals.weeklyMinDebtPayments)}
+                  {/* Tarjeta 2: (-) Total Gastos Mensuales */}
+                  <div className="p-4 rounded-2xl border bg-rose-500/10 border-rose-500/20">
+                    <span className="text-[10px] font-bold text-rose-500 block uppercase">
+                      2. (-) Total Gastos Mensuales
                     </span>
-                    <span className="text-[9px] text-amber-500 block mt-1">Cuotas mínimas mensuales ÷ 4.33</span>
+                    <span className="text-xl font-black text-rose-500 font-mono">
+                      -{formatCOP(totals.totalExpenses)}
+                    </span>
+                    <span className="text-[9px] text-rose-400 block mt-1">
+                      Suma total de presupuesto de gastos
+                    </span>
                   </div>
+
+                  {/* Tarjeta 3: Cuotas Préstamos Mensual */}
+                  <div className="p-4 rounded-2xl border bg-amber-500/10 border-amber-500/20">
+                    <span className="text-[10px] font-black text-amber-600 dark:text-amber-400 block uppercase">
+                      3. Cuotas Préstamos Mensual
+                    </span>
+                    <span className="text-xl font-black text-amber-500 font-mono">
+                      {formatCOP(totals.totalLoansMinPayment)}
+                    </span>
+                    <span className="text-[9px] text-amber-500 block mt-1">
+                      Créditos fijos y préstamos bancarios
+                    </span>
+                  </div>
+
+                  {/* Tarjeta 4: Cuotas Tarjetas Crédito */}
+                  <div className="p-4 rounded-2xl border bg-indigo-500/10 border-indigo-500/20">
+                    <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 block uppercase">
+                      4. Cuotas Tarjetas Crédito
+                    </span>
+                    <span className="text-xl font-black text-indigo-500 font-mono">
+                      {formatCOP(totals.totalCardsMinPayment)}
+                    </span>
+                    <span className="text-[9px] text-indigo-400 block mt-1">
+                      Pagos mínimos mensuales de tarjetas
+                    </span>
+                  </div>
+
                 </div>
               </div>
 
@@ -877,37 +904,31 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                     <span className={`text-[10px] font-black uppercase tracking-wider block mb-3 ${theme.textMuted}`}>
                       Línea de Ataque a Pasivos ({sortedDebts.length} Deudas en Cola)
                     </span>
-                    {sortedDebts.length === 0 ? (
-                      <div className={`p-4 rounded-2xl border text-center text-xs text-slate-400 italic ${theme.subCardBg}`}>
-                        Aún no has ingresado deudas. ¡Empieza a cargar tus datos en el Gestor de Deudas!
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        {sortedDebts.slice(0, 3).map((debt, index) => (
-                          <div 
-                            key={debt.id} 
-                            className={`p-3.5 rounded-2xl border text-xs relative ${
-                              index === 0 
-                                ? 'bg-amber-500/10 border-amber-500/40' 
-                                : theme.subCardBg
-                            }`}
-                          >
-                            <div className="flex justify-between items-center mb-1">
-                              <span className={`font-black ${theme.textMain}`}>{debt.name}</span>
-                              <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${index === 0 ? 'bg-amber-500 text-slate-950' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
-                                #{index + 1}
-                              </span>
-                            </div>
-                            <span className="font-black text-rose-500 dark:text-rose-400 block">{formatCOP(debt.balance)}</span>
-                            {debt.totalInstallments > 0 && (
-                              <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold block mt-1">
-                                📊 Cuotas: {debt.paidInstallments}/{debt.totalInstallments} ({Math.round((debt.paidInstallments / debt.totalInstallments) * 100)}%)
-                              </span>
-                            )}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {sortedDebts.slice(0, 3).map((debt, index) => (
+                        <div 
+                          key={debt.id} 
+                          className={`p-3.5 rounded-2xl border text-xs relative ${
+                            index === 0 
+                              ? 'bg-amber-500/10 border-amber-500/40' 
+                              : theme.subCardBg
+                          }`}
+                        >
+                          <div className="flex justify-between items-center mb-1">
+                            <span className={`font-black ${theme.textMain}`}>{debt.name}</span>
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${index === 0 ? 'bg-amber-500 text-slate-950' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
+                              #{index + 1}
+                            </span>
                           </div>
-                        ))}
-                      </div>
-                    )}
+                          <span className="font-black text-rose-500 dark:text-rose-400 block">{formatCOP(debt.balance)}</span>
+                          {debt.totalInstallments > 0 && (
+                            <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold block mt-1">
+                              📊 Cuotas: {debt.paidInstallments}/{debt.totalInstallments} ({Math.round((debt.paidInstallments / debt.totalInstallments) * 100)}%)
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
                 </div>
@@ -959,16 +980,17 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
             </div>
           )}
 
+          {/* VISTA 2: INGRESOS */}
           {activeTab === 'ingresos' && (
             <div className="space-y-6">
               <div className={`p-6 rounded-3xl border space-y-6 ${theme.cardBg}`}>
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
                   <div>
                     <h3 className="text-lg font-black text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
-                      <span>💵</span> Fuentes de Ingreso Variables de Marlin
+                      <span>💵</span> Fuentes de Ingreso de Marlin
                     </h3>
                     <p className={`text-xs mt-1 ${theme.textMuted}`}>
-                      Registra entradas semanales, quincenales o mensuales para iniciar tu contabilidad.
+                      Registra tus entradas semanales, quincenales o mensuales.
                     </p>
                   </div>
 
@@ -994,8 +1016,8 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                     <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                       {incomes.length === 0 ? (
                         <tr>
-                          <td colSpan="5" className="p-8 text-center text-slate-400 italic">
-                            No tienes ingresos registrados. Haz clic en "Añadir Fuente de Ingreso" para agregar el primero.
+                          <td colSpan="5" className="p-6 text-center text-slate-400 italic">
+                            No tienes fuentes de ingreso registradas. Haz clic en "Añadir Fuente de Ingreso".
                           </td>
                         </tr>
                       ) : (
@@ -1043,16 +1065,17 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
             </div>
           )}
 
+          {/* VISTA 3: GASTOS */}
           {activeTab === 'gastos' && (
             <div className="space-y-6">
               <div className={`p-6 rounded-3xl border space-y-6 ${theme.cardBg}`}>
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
                   <div>
                     <h3 className="text-lg font-black text-rose-500 dark:text-rose-400 flex items-center gap-2">
-                      <span>🛒</span> Gastos Personales, Subsistencia & Fijos
+                      <span>🛒</span> Presupuesto de Gastos Personales y Fijos
                     </h3>
                     <p className={`text-xs mt-1 ${theme.textMuted}`}>
-                      Clasifica tus egresos semanales, fijos y de subsistencia.
+                      Administra tus compromisos fijos y gastos de subsistencia o estilo de vida.
                     </p>
                   </div>
 
@@ -1080,8 +1103,8 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                     <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                       {expenses.length === 0 ? (
                         <tr>
-                          <td colSpan="7" className="p-8 text-center text-slate-400 italic">
-                            No hay gastos registrados. Haz clic en "Registrar Gasto / Egreso" para empezar a cargar tu información.
+                          <td colSpan="7" className="p-6 text-center text-slate-400 italic">
+                            No tienes gastos registrados. Haz clic en "Registrar Gasto / Egreso".
                           </td>
                         </tr>
                       ) : (
@@ -1139,6 +1162,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
             </div>
           )}
 
+          {/* VISTA 4: RUTA DE ATAQUE */}
           {activeTab === 'mapa' && (
             <div className="space-y-6">
               <div className={`p-6 rounded-3xl border space-y-6 ${theme.cardBg}`}>
@@ -1172,8 +1196,8 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
 
                 <div className="space-y-4">
                   {sortedDebts.length === 0 ? (
-                    <div className="p-8 text-center text-slate-400 italic">
-                      No hay deudas registradas para simular. ¡Registra tus obligaciones en la sección Gestor de Deudas!
+                    <div className="p-8 text-center text-slate-400 italic border rounded-2xl">
+                      No hay deudas registradas para simular.
                     </div>
                   ) : (
                     sortedDebts.map((debt, index) => (
@@ -1222,6 +1246,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
             </div>
           )}
 
+          {/* VISTA 5: DEUDAS */}
           {activeTab === 'pasivos' && (
             <div className="space-y-8">
               
@@ -1343,7 +1368,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                 </div>
               </div>
 
-              {/* SECCIÓN 2: PRÉSTAMOS A PLAZO Y GRÁFICOS DE REALIDAD DE DEUDA */}
+              {/* SECCIÓN 2: PRÉSTAMOS A PLAZO */}
               <div className={`p-6 rounded-3xl border space-y-6 ${theme.cardBg}`}>
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
                   <div>
@@ -1351,7 +1376,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                       <span>🏛️</span> Préstamos a Plazo & Créditos Fijos
                     </h3>
                     <p className={`text-xs mt-1 ${theme.textMuted}`}>
-                      Seguimiento de cuotas pactadas y porcentaje real de cumplimiento.
+                      Seguimiento de cuotas pactadas, canceladas y porcentaje de cumplimiento.
                     </p>
                   </div>
 
@@ -1366,7 +1391,6 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                   </button>
                 </div>
 
-                {/* METRICAS Y PROGRESO GENERAL DE PRÉSTAMOS */}
                 <div className={`p-5 rounded-2xl border space-y-3 ${theme.subCardBg}`}>
                   <div className="flex justify-between items-center">
                     <span className="text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400 tracking-wider">
@@ -1394,7 +1418,6 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                   </div>
                 </div>
 
-                {/* TABLA DE PRÉSTAMOS CON CONTADOR DE CUOTAS */}
                 <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800/80">
                   <table className="w-full text-left text-xs">
                     <thead>
@@ -1412,7 +1435,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                       {categorizedDebts.loans.length === 0 ? (
                         <tr>
                           <td colSpan="7" className="p-6 text-center text-slate-400 italic">
-                            No hay préstamos a plazo registrados.
+                            No hay préstamos a plazo o cuotas fijas registrados.
                           </td>
                         </tr>
                       ) : (
@@ -1494,6 +1517,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
             </div>
           )}
 
+          {/* VISTA 6: MATRIZ 50/30/20 */}
           {activeTab === 'matriz' && (
             <div className="space-y-6">
               <div className={`p-6 rounded-3xl border space-y-6 ${theme.cardBg}`}>
@@ -1533,6 +1557,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
             </div>
           )}
 
+          {/* VISTA 7: FONDO DE RESERVA */}
           {activeTab === 'reserva' && (
             <div className="space-y-6">
               <div className={`p-6 rounded-3xl border space-y-6 ${theme.cardBg}`}>
@@ -1597,6 +1622,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
             </div>
           )}
 
+          {/* VISTA 8: CONFIGURACIÓN GOOGLE SHEETS */}
           {activeTab === 'config' && (
             <div className="space-y-6">
               <div className={`p-6 rounded-3xl border space-y-6 ${theme.cardBg}`}>
@@ -1605,7 +1631,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                     <span>☁️</span> Sincronización con Google Drive (Google Sheets)
                   </h3>
                   <p className={`text-xs mt-1 ${theme.textMuted}`}>
-                    Conecta tu hoja de cálculo "Finanzas Marlin" ingresando tu enlace /exec.
+                    Conecta esta aplicación web con tu hoja de cálculo personal en Google Drive.
                   </p>
                 </div>
 
@@ -1636,7 +1662,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                       disabled={syncing}
                       className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-black text-xs py-3 px-4 rounded-xl flex-1 shadow-lg disabled:opacity-50 cursor-pointer"
                     >
-                      {syncing ? 'Subiendo...' : '☁️ Guardar Datos a Google Drive'}
+                      {syncing ? 'Subiendo...' : '☁️ Forzar Subida a Google Drive'}
                     </button>
 
                     <button
@@ -1649,17 +1675,11 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                   </div>
                 </div>
 
-                <div className={`p-5 rounded-2xl border space-y-3 bg-rose-500/5 border-rose-500/20`}>
-                  <span className="font-black text-xs uppercase text-rose-500 block">🧹 Reiniciar Todo en Cero:</span>
-                  <p className="text-xs text-slate-400">
-                    Si quieres vaciar la memoria local para empezar tus registros completamente limpios desde cero, usa este botón:
+                <div className={`p-4 rounded-2xl border text-xs space-y-2 ${theme.subCardBg}`}>
+                  <span className="font-black block uppercase text-amber-500">📌 Sincronización Automática:</span>
+                  <p className={theme.textMuted}>
+                    Al realizar cualquier modificación en deudas, ingresos o gastos, el sistema se actualizará automáticamente con tu hoja de cálculo.
                   </p>
-                  <button
-                    onClick={handleClearAllData}
-                    className="bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 border border-rose-500/30 font-black text-xs py-2.5 px-4 rounded-xl cursor-pointer transition"
-                  >
-                    🗑️ Reiniciar todo en cero
-                  </button>
                 </div>
 
               </div>
@@ -1688,7 +1708,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                 <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Nombre Deuda / Crédito</label>
                 <input 
                   type="text" 
-                  placeholder="Ej: Tarjeta Nu, Crédito Vehículo"
+                  placeholder="Ej: Crédito Libre Inversión, Tarjeta Nu"
                   value={newDebt.name} 
                   onChange={e => setNewDebt(p => ({ ...p, name: e.target.value }))} 
                   className={`w-full rounded-xl px-3 py-2 text-xs ${theme.inputBg}`} 
@@ -1701,7 +1721,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                   <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Entidad</label>
                   <input 
                     type="text" 
-                    placeholder="Ej: Nu Bank, Bancolombia"
+                    placeholder="Ej: Bancolombia"
                     value={newDebt.entity} 
                     onChange={e => setNewDebt(p => ({ ...p, entity: e.target.value }))} 
                     className={`w-full rounded-xl px-3 py-2 text-xs ${theme.inputBg}`} 
@@ -1726,7 +1746,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                   <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Saldo Actual ($ COP)</label>
                   <input 
                     type="number" 
-                    placeholder="Ej: 1500000"
+                    placeholder="Ej: 8000000"
                     value={newDebt.balance} 
                     onChange={e => setNewDebt(p => ({ ...p, balance: e.target.value }))} 
                     className={`w-full rounded-xl px-3 py-2 text-xs font-black ${theme.inputBg}`} 
@@ -1737,7 +1757,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                   <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Cuota Mínima</label>
                   <input 
                     type="number" 
-                    placeholder="Ej: 120000"
+                    placeholder="Ej: 420000"
                     value={newDebt.minPayment} 
                     onChange={e => setNewDebt(p => ({ ...p, minPayment: e.target.value }))} 
                     className={`w-full rounded-xl px-3 py-2 text-xs font-black ${theme.inputBg}`} 
@@ -1761,17 +1781,17 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                   <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Día de Pago</label>
                   <input 
                     type="text" 
-                    placeholder="Ej: 15"
+                    placeholder="Ej: 17"
                     value={newDebt.dueDate} 
                     onChange={e => setNewDebt(p => ({ ...p, dueDate: e.target.value }))} 
                     className={`w-full rounded-xl px-3 py-2 text-xs ${theme.inputBg}`} 
                   />
                 </div>
                 <div>
-                  <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Total Cuotas</label>
+                  <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Total Cuotas (Plazo)</label>
                   <input 
                     type="number" 
-                    placeholder="Ej: 12"
+                    placeholder="Ej: 60"
                     value={newDebt.totalInstallments} 
                     onChange={e => setNewDebt(p => ({ ...p, totalInstallments: e.target.value }))} 
                     className={`w-full rounded-xl px-3 py-2 text-xs font-bold ${theme.inputBg}`} 
@@ -1781,7 +1801,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                   <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Cuotas Pagadas</label>
                   <input 
                     type="number" 
-                    placeholder="Ej: 0"
+                    placeholder="Ej: 46"
                     value={newDebt.paidInstallments} 
                     onChange={e => setNewDebt(p => ({ ...p, paidInstallments: e.target.value }))} 
                     className={`w-full rounded-xl px-3 py-2 text-xs font-bold ${theme.inputBg}`} 
@@ -1897,7 +1917,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                   />
                 </div>
                 <div>
-                  <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Total Cuotas</label>
+                  <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Total Cuotas (Plazo)</label>
                   <input 
                     type="number" 
                     value={editingDebt.totalInstallments || ''} 
@@ -1950,7 +1970,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                 <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Concepto / Fuente</label>
                 <input 
                   type="text" 
-                  placeholder="Ej: Salario, Ventas, Trabajo Ocasional"
+                  placeholder="Ej: Salario, Ventas, Honorarios"
                   value={newIncome.concept} 
                   onChange={e => setNewIncome(p => ({ ...p, concept: e.target.value }))} 
                   className={`w-full rounded-xl px-3 py-2 text-xs ${theme.inputBg}`} 
@@ -1960,10 +1980,10 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Monto ($ COP)</label>
+                  <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Monto por Periodo ($ COP)</label>
                   <input 
                     type="number" 
-                    placeholder="Ej: 500000"
+                    placeholder="Ej: 1500000"
                     value={newIncome.amount} 
                     onChange={e => setNewIncome(p => ({ ...p, amount: e.target.value }))} 
                     className={`w-full rounded-xl px-3 py-2 text-xs font-black ${theme.inputBg}`} 
@@ -1972,7 +1992,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                 </div>
 
                 <div>
-                  <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Frecuencia</label>
+                  <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Frecuencia de Cobro</label>
                   <select 
                     value={newIncome.frequency} 
                     onChange={e => setNewIncome(p => ({ ...p, frequency: e.target.value }))} 
@@ -2028,7 +2048,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Monto ($ COP)</label>
+                  <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Monto por Periodo ($ COP)</label>
                   <input 
                     type="number" 
                     value={editingIncome.amount} 
@@ -2039,7 +2059,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                 </div>
 
                 <div>
-                  <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Frecuencia</label>
+                  <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Frecuencia de Cobro</label>
                   <select 
                     value={editingIncome.frequency} 
                     onChange={e => setEditingIncome(p => ({ ...p, frequency: e.target.value }))} 
@@ -2096,10 +2116,10 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Monto ($ COP)</label>
+                  <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Monto por Periodo ($ COP)</label>
                   <input 
                     type="number" 
-                    placeholder="Ej: 200000"
+                    placeholder="Ej: 300000"
                     value={newExpense.amount} 
                     onChange={e => setNewExpense(p => ({ ...p, amount: e.target.value }))} 
                     className={`w-full rounded-xl px-3 py-2 text-xs font-black ${theme.inputBg}`} 
@@ -2128,14 +2148,14 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                   onChange={e => setNewExpense(p => ({ ...p, category: e.target.value }))} 
                   className={`w-full rounded-xl px-3 py-2 text-xs font-bold ${theme.inputBg}`}
                 >
-                  <option value="Fijo">Gasto Fijo / Obligación</option>
-                  <option value="Subsistencia">Subsistencia / Alimentación</option>
+                  <option value="Fijo">Gasto Fijo / Obligación (Arriendo, Servicios, Seguros)</option>
+                  <option value="Subsistencia">Subsistencia / Alimentación (Mercado diario/semanal)</option>
                   <option value="Deseo">Estilo de Vida / Deseo</option>
                 </select>
               </div>
 
               <div>
-                <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Día de Pago</label>
+                <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Fecha / Día de Pago</label>
                 <input 
                   type="text" 
                   placeholder="Ej: 5 o 15, 30"
@@ -2188,7 +2208,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Monto ($ COP)</label>
+                  <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Monto por Periodo ($ COP)</label>
                   <input 
                     type="number" 
                     value={editingExpense.amount} 
@@ -2219,8 +2239,8 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                   onChange={e => setEditingExpense(p => ({ ...p, category: e.target.value }))} 
                   className={`w-full rounded-xl px-3 py-2 text-xs font-bold ${theme.inputBg}`}
                 >
-                  <option value="Fijo">Gasto Fijo / Obligación</option>
-                  <option value="Subsistencia">Subsistencia / Alimentación</option>
+                  <option value="Fijo">Gasto Fijo / Obligación (Arriendo, Servicios, Seguros)</option>
+                  <option value="Subsistencia">Subsistencia / Alimentación (Mercado diario/semanal)</option>
                   <option value="Deseo">Estilo de Vida / Deseo</option>
                 </select>
               </div>
