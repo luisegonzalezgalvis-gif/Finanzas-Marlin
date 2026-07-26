@@ -252,7 +252,6 @@ export default function App() {
     const totalDebtBalance = debts.reduce((sum, item) => sum + Number(item.balance), 0);
     const totalMinDebtPayments = debts.reduce((sum, item) => sum + Number(item.minPayment), 0);
 
-    // Cuotas mensuales específicas de préstamos y tarjetas
     const totalLoansMinPayment = categorizedDebts.loans.reduce((sum, item) => sum + Number(item.minPayment), 0);
     const totalCardsMinPayment = categorizedDebts.cards.reduce((sum, item) => sum + Number(item.minPayment), 0);
 
@@ -292,52 +291,108 @@ export default function App() {
   const simulation = useMemo(() => {
     if (debts.length === 0) return { monthsNormal: 0, monthsAccelerated: 0, savedMonths: 0 };
 
-    let tempDebtsNormal = debts.map(d => ({ ...d }));
-    let monthsNormal = 0;
     let maxSafetyCounter = 240;
 
-    while (tempDebtsNormal.some(d => d.balance > 0) && monthsNormal < maxSafetyCounter) {
+    // 1. SIMULACIÓN CON PAGO NORMAL / PLANO (Límite por cuotas contractuales restantes)
+    let tempDebtsNormal = debts.map(d => {
+      const total = Number(d.totalInstallments) || 0;
+      const paid = Number(d.paidInstallments) || 0;
+      const rem = total > 0 ? Math.max(0, total - paid) : 0;
+      return {
+        bal: Number(d.balance) || 0,
+        min: Number(d.minPayment) || 0,
+        rate: Number(d.rate) || 0,
+        rem
+      };
+    });
+
+    let monthsNormal = 0;
+    while (tempDebtsNormal.some(d => d.bal > 0) && monthsNormal < maxSafetyCounter) {
       monthsNormal++;
       tempDebtsNormal.forEach(d => {
-        if (d.balance > 0) {
-          const interestMonth = (d.balance * (d.rate / 100)) / 12;
-          const principalPayment = Math.max(0, d.minPayment - interestMonth);
-          d.balance = Math.max(0, d.balance - principalPayment);
+        if (d.bal > 0) {
+          const interestMonth = (d.bal * (d.rate / 100)) / 12;
+          const principalPayment = Math.max(0, d.min - interestMonth);
+
+          if (d.rem > 0) {
+            d.rem--;
+            if (d.rem === 0) {
+              d.bal = 0;
+            } else {
+              d.bal = Math.max(0, d.bal - principalPayment);
+            }
+          } else {
+            d.bal = Math.max(0, d.bal - principalPayment);
+          }
         }
       });
     }
 
-    let tempDebtsAccel = sortedDebts.map(d => ({ ...d }));
+    // 2. SIMULACIÓN ACELERADA (CON EFECTO CASCADA BOLA DE NIEVE REAL)
+    let tempDebtsAccel = sortedDebts.map(d => {
+      const total = Number(d.totalInstallments) || 0;
+      const paid = Number(d.paidInstallments) || 0;
+      const rem = total > 0 ? Math.max(0, total - paid) : 0;
+      return {
+        id: d.id,
+        bal: Number(d.balance) || 0,
+        min: Number(d.minPayment) || 0,
+        rate: Number(d.rate) || 0,
+        rem
+      };
+    });
+
     let monthsAccelerated = 0;
 
-    while (tempDebtsAccel.some(d => d.balance > 0) && monthsAccelerated < maxSafetyCounter) {
+    while (tempDebtsAccel.some(d => d.bal > 0) && monthsAccelerated < maxSafetyCounter) {
       monthsAccelerated++;
-      let extraPool = Number(extraAbono) || 0;
 
+      // a. Fondo Extra Base para este mes = Abono Extra ingresado + Cuotas liberadas de deudas pagadas
+      let monthlyAvailablePool = Number(extraAbono) || 0;
+
+      // Sumar al pozo extra las cuotas mensuales de las deudas que ya se liquidaron (Efecto Cascada)
       tempDebtsAccel.forEach(d => {
-        if (d.balance > 0) {
-          const interestMonth = (d.balance * (d.rate / 100)) / 12;
-          const normalPayment = Math.min(d.balance + interestMonth, d.minPayment);
-          const principalPayment = Math.max(0, normalPayment - interestMonth);
-          d.balance = Math.max(0, d.balance - principalPayment);
+        if (d.bal <= 0) {
+          monthlyAvailablePool += d.min;
         }
       });
 
+      // b. Aplicar cuota mínima normal a deudas vigentes
+      tempDebtsAccel.forEach(d => {
+        if (d.bal > 0) {
+          const interestMonth = (d.bal * (d.rate / 100)) / 12;
+          const principalPayment = Math.max(0, d.min - interestMonth);
+
+          if (d.rem > 0) {
+            d.rem--;
+            if (d.rem === 0) {
+              d.bal = 0;
+            } else {
+              d.bal = Math.max(0, d.bal - principalPayment);
+            }
+          } else {
+            d.bal = Math.max(0, d.bal - principalPayment);
+          }
+        }
+      });
+
+      // c. Inyectar todo el pozo en cascada a la primera deuda con saldo pendiente
       for (let d of tempDebtsAccel) {
-        if (d.balance > 0 && extraPool > 0) {
-          const abonoActual = Math.min(d.balance, extraPool);
-          d.balance -= abonoActual;
-          extraPool -= abonoActual;
+        if (d.bal > 0 && monthlyAvailablePool > 0) {
+          const extraApplied = Math.min(d.bal, monthlyAvailablePool);
+          d.bal -= extraApplied;
+          monthlyAvailablePool -= extraApplied;
         }
       }
     }
 
+    const nMonths = typeof monthsNormal === 'number' ? monthsNormal : 0;
+    const aMonths = typeof monthsAccelerated === 'number' ? monthsAccelerated : 0;
+
     return {
       monthsNormal: monthsNormal >= maxSafetyCounter ? '20+ años' : `${monthsNormal} meses`,
       monthsAccelerated: monthsAccelerated >= maxSafetyCounter ? '20+ años' : `${monthsAccelerated} meses`,
-      savedMonths: (typeof monthsNormal === 'number' && typeof monthsAccelerated === 'number')
-        ? Math.max(0, monthsNormal - monthsAccelerated)
-        : 0
+      savedMonths: Math.max(0, nMonths - aMonths)
     };
   }, [debts, sortedDebts, extraAbono]);
 
@@ -775,7 +830,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
             </div>
           )}
 
-          {/* VISTA 1: DASHBOARD PRINCIPAL - TARJETAS PERSONALIZADAS SOLICITADAS */}
+          {/* VISTA 1: DASHBOARD PRINCIPAL */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6">
               <div className={`p-6 rounded-3xl border shadow-xl relative overflow-hidden ${theme.cardBg}`}>
@@ -793,7 +848,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                   </span>
                 </div>
 
-                {/* 4 TARJETAS PRINCIPALES PERSONALIZADAS SEGÚN LA SOLICITUD DE MARLIN */}
+                {/* 4 TARJETAS PRINCIPALES */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
                   
                   {/* Tarjeta 1: Total Ingresos Mensuales */}
