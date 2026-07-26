@@ -7,67 +7,56 @@ const formatCOP = (val) => new Intl.NumberFormat('es-CO', {
   minimumFractionDigits: 0 
 }).format(val || 0);
 
-// Deudas iniciales de ejemplo
-const INITIAL_DEBTS = [
-  { id: 'd1', name: 'Tarjeta Crédito Nu', entity: 'Nu Bank', balance: 1800000, minPayment: 150000, rate: 28.5, category: 'Tarjeta (Variable)', dueDate: '15', totalInstallments: 12, paidInstallments: 4 },
-  { id: 'd2', name: 'Tarjeta BBVA 8968', entity: 'BBVA', balance: 3500000, minPayment: 280000, rate: 29.2, category: 'Tarjeta (Variable)', dueDate: '28', totalInstallments: 0, paidInstallments: 0 },
-  { id: 'd3', name: 'Crédito Libre Inversión', entity: 'Bancolombia', balance: 8000000, minPayment: 420000, rate: 22.0, category: 'Préstamo (Fijo)', dueDate: '5', totalInstallments: 60, paidInstallments: 46 },
-  { id: 'd4', name: 'Préstamo Familiar', entity: 'Personal', balance: 600000, minPayment: 100000, rate: 0.0, category: 'Personal', dueDate: '30', totalInstallments: 10, paidInstallments: 4 },
-];
-
-const INITIAL_INCOMES = [
-  { id: 'i1', concept: 'Producido Conducción / Plataformas', amount: 500000, frequency: 'semanal' }, 
-  { id: 'i2', concept: 'Honorarios / Servicios Ocasionales', amount: 350000, frequency: 'quincenal' }, 
-  { id: 'i3', concept: 'Otros Ingresos / Rendimientos', amount: 200000, frequency: 'mensual' },
-];
-
-const INITIAL_EXPENSES = [
-  { id: 'e1', concept: 'Mercado y Alimentación Diaria', amount: 200000, frequency: 'semanal', category: 'Subsistencia', dueDate: 'Semanal' },
-  { id: 'e2', concept: 'Gastos Personales y Menudero', amount: 50000, frequency: 'semanal', category: 'Subsistencia', dueDate: 'Semanal' },
-  { id: 'e3', concept: 'Cuota Hijo (Apoyo Familiar)', amount: 200000, frequency: 'quincenal', category: 'Fijo', dueDate: '15, 30' },
-  { id: 'e4', concept: 'Seguridad Social y Pensión', amount: 500000, frequency: 'mensual', category: 'Fijo', dueDate: '17' },
-  { id: 'e5', concept: 'Arriendo / Vivienda', amount: 800000, frequency: 'mensual', category: 'Fijo', dueDate: '5' },
-  { id: 'e6', concept: 'Servicios Públicos e Internet', amount: 350000, frequency: 'mensual', category: 'Fijo', dueDate: '20' },
-];
-
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isDarkMode, setIsDarkMode] = useState(true);
 
-  // Estados con persistencia en localStorage para Marlin
+  // Estados con persistencia en localStorage para Marlin (Inician vacíos o guardados)
   const [debts, setDebts] = useState(() => {
-    const saved = localStorage.getItem('finanzas_marlin_debts') || localStorage.getItem('finanzas_luis_debts');
-    if (!saved) return INITIAL_DEBTS;
+    const saved = localStorage.getItem('finanzas_marlin_debts');
+    if (!saved) return [];
     try {
       const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_DEBTS;
+      return Array.isArray(parsed) ? parsed : [];
     } catch {
-      return INITIAL_DEBTS;
+      return [];
     }
   });
 
   const [incomes, setIncomes] = useState(() => {
-    const saved = localStorage.getItem('finanzas_marlin_incomes') || localStorage.getItem('finanzas_luis_incomes');
-    return saved ? JSON.parse(saved) : INITIAL_INCOMES;
+    const saved = localStorage.getItem('finanzas_marlin_incomes');
+    if (!saved) return [];
+    try {
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
   });
 
   const [expenses, setExpenses] = useState(() => {
-    const saved = localStorage.getItem('finanzas_marlin_expenses') || localStorage.getItem('finanzas_luis_expenses');
-    return saved ? JSON.parse(saved) : INITIAL_EXPENSES;
+    const saved = localStorage.getItem('finanzas_marlin_expenses');
+    if (!saved) return [];
+    try {
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
   });
 
   const [emergencyFund, setEmergencyFund] = useState(() => {
-    const saved = localStorage.getItem('finanzas_marlin_reserve') || localStorage.getItem('finanzas_luis_reserve');
-    return saved ? JSON.parse(saved) : { current: 800000, targetMonths: 3 };
+    const saved = localStorage.getItem('finanzas_marlin_reserve');
+    return saved ? JSON.parse(saved) : { current: 0, targetMonths: 3 };
   });
 
   // Estrategia y Abono Extra
   const [payoffStrategy, setPayoffStrategy] = useState('snowball');
-  const [extraAbono, setExtraAbono] = useState(200000);
+  const [extraAbono, setExtraAbono] = useState(0);
 
   // Sincronización Google Sheets
-  const [sheetsUrl, setSheetsUrl] = useState(() => localStorage.getItem('finanzas_marlin_sheets_url') || localStorage.getItem('finanzas_luis_sheets_url') || '');
+  const [sheetsUrl, setSheetsUrl] = useState(() => localStorage.getItem('finanzas_marlin_sheets_url') || '');
   const [syncing, setSyncing] = useState(false);
   const [autoSyncing, setAutoSyncing] = useState(false);
   const [toastMsg, setToastMsg] = useState(null);
@@ -491,6 +480,14 @@ export default function App() {
     showNotification('🗑️ Ingreso eliminado');
   };
 
+  const handleClearAllData = () => {
+    setIncomes([]);
+    setExpenses([]);
+    setDebts([]);
+    setEmergencyFund({ current: 0, targetMonths: 3 });
+    showNotification('✨ Aplicación reiniciada completamente en cero', 'success');
+  };
+
   const handleSaveSheetsUrl = () => {
     localStorage.setItem('finanzas_marlin_sheets_url', sheetsUrl);
     showNotification('☁️ URL de Google Apps Script guardada en memoria local');
@@ -510,12 +507,12 @@ export default function App() {
       const data = await res.json();
 
       if (data) {
-        if (data.incomes && Array.isArray(data.incomes) && data.incomes.length > 0) setIncomes(data.incomes);
-        if (data.expenses && Array.isArray(data.expenses) && data.expenses.length > 0) setExpenses(data.expenses);
-        if (data.debts && Array.isArray(data.debts) && data.debts.length > 0) setDebts(data.debts);
+        setIncomes(data.incomes && Array.isArray(data.incomes) ? data.incomes : []);
+        setExpenses(data.expenses && Array.isArray(data.expenses) ? data.expenses : []);
+        setDebts(data.debts && Array.isArray(data.debts) ? data.debts : []);
         if (data.emergencyFund && data.emergencyFund.current !== undefined) setEmergencyFund(data.emergencyFund);
 
-        showNotification('🔄 ¡Base de datos cargada desde Google Sheets!');
+        showNotification('🔄 ¡Base de datos sincronizada desde Google Sheets!');
       } else {
         showNotification('⚠️ La respuesta de la nube estaba vacía', 'error');
       }
@@ -527,7 +524,6 @@ export default function App() {
     }
   };
 
-  // AUDITORÍA IA ASESOR - GENERADOR DINÁMICO
   const handleGenerateAiDiagnostic = async () => {
     setAiLoading(true);
     setAiAnalysis('');
@@ -541,13 +537,10 @@ export default function App() {
 • Subsistencia / Alimentación Diaria: -${formatCOP(totals.weeklySubsistence)} COP
 • Flujo Limpio Semanal Restante: ${formatCOP(totals.weeklyNetAvailable)} COP
 
-💡 Evaluación de Riesgo: Tu cobertura semanal actual es del ${totals.weeklyGrossIncome > 0 ? Math.round((totals.weeklySubsistence / totals.weeklyGrossIncome) * 100) : 0}%. Tu alimentación básica está 100% resguardada antes de pagar cualquier cuota.
+💡 Evaluación de Riesgo: Tu cobertura semanal actual es del ${totals.weeklyGrossIncome > 0 ? Math.round((totals.weeklySubsistence / totals.weeklyGrossIncome) * 100) : 0}%. Tu alimentación básica está resguardada antes de pagar cualquier cuota.
 
 🎯 2. PLAN DE DISTRIBUCIÓN Y DÍAS CLAVE DE PAGO
 • Reservar semanalmente para compromisos fijos: ${formatCOP(totals.weeklyMinDebtPayments)} COP/semana.
-• Día 5: Reserva de Arriendo / Crédito Bancolombia.
-• Día 15 y 30: Apoyo Hijo (${formatCOP(400000)}/mes).
-• Día 17: Seguridad Social y Pensión (${formatCOP(500000)}/mes).
 
 ⚡ 3. PASO A PASO PARA LIQUIDAR SU PRIMER PASIVO
 • Estrategia Activa: ${strategyName}
@@ -884,31 +877,37 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                     <span className={`text-[10px] font-black uppercase tracking-wider block mb-3 ${theme.textMuted}`}>
                       Línea de Ataque a Pasivos ({sortedDebts.length} Deudas en Cola)
                     </span>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      {sortedDebts.slice(0, 3).map((debt, index) => (
-                        <div 
-                          key={debt.id} 
-                          className={`p-3.5 rounded-2xl border text-xs relative ${
-                            index === 0 
-                              ? 'bg-amber-500/10 border-amber-500/40' 
-                              : theme.subCardBg
-                          }`}
-                        >
-                          <div className="flex justify-between items-center mb-1">
-                            <span className={`font-black ${theme.textMain}`}>{debt.name}</span>
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${index === 0 ? 'bg-amber-500 text-slate-950' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
-                              #{index + 1}
-                            </span>
+                    {sortedDebts.length === 0 ? (
+                      <div className={`p-4 rounded-2xl border text-center text-xs text-slate-400 italic ${theme.subCardBg}`}>
+                        Aún no has ingresado deudas. ¡Empieza a cargar tus datos en el Gestor de Deudas!
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {sortedDebts.slice(0, 3).map((debt, index) => (
+                          <div 
+                            key={debt.id} 
+                            className={`p-3.5 rounded-2xl border text-xs relative ${
+                              index === 0 
+                                ? 'bg-amber-500/10 border-amber-500/40' 
+                                : theme.subCardBg
+                            }`}
+                          >
+                            <div className="flex justify-between items-center mb-1">
+                              <span className={`font-black ${theme.textMain}`}>{debt.name}</span>
+                              <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${index === 0 ? 'bg-amber-500 text-slate-950' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
+                                #{index + 1}
+                              </span>
+                            </div>
+                            <span className="font-black text-rose-500 dark:text-rose-400 block">{formatCOP(debt.balance)}</span>
+                            {debt.totalInstallments > 0 && (
+                              <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold block mt-1">
+                                📊 Cuotas: {debt.paidInstallments}/{debt.totalInstallments} ({Math.round((debt.paidInstallments / debt.totalInstallments) * 100)}%)
+                              </span>
+                            )}
                           </div>
-                          <span className="font-black text-rose-500 dark:text-rose-400 block">{formatCOP(debt.balance)}</span>
-                          {debt.totalInstallments > 0 && (
-                            <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold block mt-1">
-                              📊 Cuotas: {debt.paidInstallments}/{debt.totalInstallments} ({Math.round((debt.paidInstallments / debt.totalInstallments) * 100)}%)
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                 </div>
@@ -969,7 +968,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                       <span>💵</span> Fuentes de Ingreso Variables de Marlin
                     </h3>
                     <p className={`text-xs mt-1 ${theme.textMuted}`}>
-                      Registra entradas semanales (plataformas), quincenales o mensuales.
+                      Registra entradas semanales, quincenales o mensuales para iniciar tu contabilidad.
                     </p>
                   </div>
 
@@ -993,41 +992,49 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                      {incomes.map(inc => {
-                        const amt = Number(inc.amount) || 0;
-                        const monthlyEq = inc.frequency === 'semanal' ? amt * 4.3333 : inc.frequency === 'quincenal' ? amt * 2 : amt;
+                      {incomes.length === 0 ? (
+                        <tr>
+                          <td colSpan="5" className="p-8 text-center text-slate-400 italic">
+                            No tienes ingresos registrados. Haz clic en "Añadir Fuente de Ingreso" para agregar el primero.
+                          </td>
+                        </tr>
+                      ) : (
+                        incomes.map(inc => {
+                          const amt = Number(inc.amount) || 0;
+                          const monthlyEq = inc.frequency === 'semanal' ? amt * 4.3333 : inc.frequency === 'quincenal' ? amt * 2 : amt;
 
-                        return (
-                          <tr key={inc.id} className={theme.tableRowHover}>
-                            <td className={`p-3.5 font-bold ${theme.textMain}`}>{inc.concept}</td>
-                            <td className="p-3.5">
-                              <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase ${
-                                inc.frequency === 'semanal' ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300' :
-                                inc.frequency === 'quincenal' ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300' :
-                                'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300'
-                              }`}>
-                                {inc.frequency}
-                              </span>
-                            </td>
-                            <td className="p-3.5 text-right font-mono font-bold text-indigo-600 dark:text-indigo-400">{formatCOP(amt)}</td>
-                            <td className="p-3.5 text-right font-black font-mono text-emerald-600 dark:text-emerald-400">{formatCOP(monthlyEq)}</td>
-                            <td className="p-3.5 text-center flex justify-center gap-2">
-                              <button
-                                onClick={() => handleOpenEditIncome(inc)}
-                                className="bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 border border-amber-500/20 px-2.5 py-1 rounded-lg text-[10px] font-black transition cursor-pointer"
-                              >
-                                Editar ✏️
-                              </button>
-                              <button
-                                onClick={() => handleDeleteIncome(inc.id)}
-                                className="bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 border border-rose-500/20 px-2.5 py-1 rounded-lg text-[10px] font-black transition cursor-pointer"
-                              >
-                                Eliminar 🗑️
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
+                          return (
+                            <tr key={inc.id} className={theme.tableRowHover}>
+                              <td className={`p-3.5 font-bold ${theme.textMain}`}>{inc.concept}</td>
+                              <td className="p-3.5">
+                                <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                                  inc.frequency === 'semanal' ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300' :
+                                  inc.frequency === 'quincenal' ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300' :
+                                  'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300'
+                                }`}>
+                                  {inc.frequency}
+                                </span>
+                              </td>
+                              <td className="p-3.5 text-right font-mono font-bold text-indigo-600 dark:text-indigo-400">{formatCOP(amt)}</td>
+                              <td className="p-3.5 text-right font-black font-mono text-emerald-600 dark:text-emerald-400">{formatCOP(monthlyEq)}</td>
+                              <td className="p-3.5 text-center flex justify-center gap-2">
+                                <button
+                                  onClick={() => handleOpenEditIncome(inc)}
+                                  className="bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 border border-amber-500/20 px-2.5 py-1 rounded-lg text-[10px] font-black transition cursor-pointer"
+                                >
+                                  Editar ✏️
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteIncome(inc.id)}
+                                  className="bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 border border-rose-500/20 px-2.5 py-1 rounded-lg text-[10px] font-black transition cursor-pointer"
+                                >
+                                  Eliminar 🗑️
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -1045,7 +1052,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                       <span>🛒</span> Gastos Personales, Subsistencia & Fijos
                     </h3>
                     <p className={`text-xs mt-1 ${theme.textMuted}`}>
-                      Distingue tus egresos de alimentación/mercado semanal de tus compromisos fijos (como la seguridad social el 17 o la cuota de tu hijo el 15/30).
+                      Clasifica tus egresos semanales, fijos y de subsistencia.
                     </p>
                   </div>
 
@@ -1071,51 +1078,59 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                      {expenses.map(exp => {
-                        const amt = Number(exp.amount) || 0;
-                        const monthlyEq = exp.frequency === 'semanal' ? amt * 4.3333 : exp.frequency === 'quincenal' ? amt * 2 : amt;
+                      {expenses.length === 0 ? (
+                        <tr>
+                          <td colSpan="7" className="p-8 text-center text-slate-400 italic">
+                            No hay gastos registrados. Haz clic en "Registrar Gasto / Egreso" para empezar a cargar tu información.
+                          </td>
+                        </tr>
+                      ) : (
+                        expenses.map(exp => {
+                          const amt = Number(exp.amount) || 0;
+                          const monthlyEq = exp.frequency === 'semanal' ? amt * 4.3333 : exp.frequency === 'quincenal' ? amt * 2 : amt;
 
-                        return (
-                          <tr key={exp.id} className={theme.tableRowHover}>
-                            <td className={`p-3.5 font-bold ${theme.textMain}`}>{exp.concept}</td>
-                            <td className="p-3.5">
-                              <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-black ${
-                                exp.category === 'Subsistencia' ? 'bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300' :
-                                exp.category === 'Fijo' ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300' :
-                                'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300'
-                              }`}>
-                                {exp.category}
-                              </span>
-                            </td>
-                            <td className="p-3.5 uppercase text-[10px] font-bold text-slate-500">{exp.frequency}</td>
-                            <td className="p-3.5">
-                              {exp.dueDate ? (
-                                <span className="text-[10px] bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded font-black border border-amber-300 dark:border-amber-800">
-                                  📅 {exp.dueDate}
+                          return (
+                            <tr key={exp.id} className={theme.tableRowHover}>
+                              <td className={`p-3.5 font-bold ${theme.textMain}`}>{exp.concept}</td>
+                              <td className="p-3.5">
+                                <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-black ${
+                                  exp.category === 'Subsistencia' ? 'bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300' :
+                                  exp.category === 'Fijo' ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300' :
+                                  'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300'
+                                }`}>
+                                  {exp.category}
                                 </span>
-                              ) : (
-                                <span className="text-slate-400 text-[10px]">-</span>
-                              )}
-                            </td>
-                            <td className="p-3.5 text-right font-mono font-bold text-rose-500">{formatCOP(amt)}</td>
-                            <td className="p-3.5 text-right font-black font-mono text-slate-700 dark:text-slate-300">{formatCOP(monthlyEq)}</td>
-                            <td className="p-3.5 text-center flex justify-center gap-2">
-                              <button
-                                onClick={() => handleOpenEditExpense(exp)}
-                                className="bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 border border-amber-500/20 px-2.5 py-1 rounded-lg text-[10px] font-black transition cursor-pointer"
-                              >
-                                Editar ✏️
-                              </button>
-                              <button
-                                onClick={() => handleDeleteExpense(exp.id)}
-                                className="bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 border border-rose-500/20 px-2.5 py-1 rounded-lg text-[10px] font-black transition cursor-pointer"
-                              >
-                                Eliminar 🗑️
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
+                              </td>
+                              <td className="p-3.5 uppercase text-[10px] font-bold text-slate-500">{exp.frequency}</td>
+                              <td className="p-3.5">
+                                {exp.dueDate ? (
+                                  <span className="text-[10px] bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded font-black border border-amber-300 dark:border-amber-800">
+                                    📅 {exp.dueDate}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 text-[10px]">-</span>
+                                )}
+                              </td>
+                              <td className="p-3.5 text-right font-mono font-bold text-rose-500">{formatCOP(amt)}</td>
+                              <td className="p-3.5 text-right font-black font-mono text-slate-700 dark:text-slate-300">{formatCOP(monthlyEq)}</td>
+                              <td className="p-3.5 text-center flex justify-center gap-2">
+                                <button
+                                  onClick={() => handleOpenEditExpense(exp)}
+                                  className="bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 border border-amber-500/20 px-2.5 py-1 rounded-lg text-[10px] font-black transition cursor-pointer"
+                                >
+                                  Editar ✏️
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteExpense(exp.id)}
+                                  className="bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 border border-rose-500/20 px-2.5 py-1 rounded-lg text-[10px] font-black transition cursor-pointer"
+                                >
+                                  Eliminar 🗑️
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -1145,7 +1160,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                     </div>
                     <input
                       type="range"
-                      min="50000"
+                      min="0"
                       max="1500000"
                       step="50000"
                       value={extraAbono}
@@ -1156,45 +1171,51 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                 </div>
 
                 <div className="space-y-4">
-                  {sortedDebts.map((debt, index) => (
-                    <div 
-                      key={debt.id} 
-                      className={`p-5 rounded-2xl border transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4 ${
-                        index === 0 
-                          ? 'bg-amber-500/10 border-amber-500/50 shadow-lg shadow-amber-500/5' 
-                          : theme.subCardBg
-                      }`}
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm ${
-                          index === 0 ? 'bg-amber-500 text-slate-950 shadow-md' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                        }`}>
-                          #{index + 1}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className={`font-black text-sm ${theme.textMain}`}>{debt.name}</span>
-                            {index === 0 && (
-                              <span className="bg-amber-500/20 text-amber-600 dark:text-amber-300 text-[9px] font-black px-2.5 py-0.5 rounded-full border border-amber-500/30">
-                                🎯 ATACAR HOY
-                              </span>
-                            )}
-                          </div>
-                          <p className={`text-xs mt-0.5 ${theme.textMuted}`}>
-                            {debt.entity} • Tasa: <strong className="text-amber-500 dark:text-amber-400">{debt.rate}% EA</strong>
-                            {debt.dueDate && <span className="ml-2 text-indigo-600 dark:text-amber-300 font-bold">📅 Día de pago: {debt.dueDate}</span>}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="text-left md:text-right w-full md:w-auto pt-3 md:pt-0 border-t md:border-t-0 border-slate-200 dark:border-slate-800">
-                        <span className="font-black text-base text-rose-500 dark:text-rose-400 block font-mono">{formatCOP(debt.balance)}</span>
-                        <span className={`text-[10px] font-medium ${theme.textMuted}`}>
-                          Cuota: {formatCOP(debt.minPayment)} {index === 0 && extraAbono > 0 && `+ ${formatCOP(extraAbono)} extra`}
-                        </span>
-                      </div>
+                  {sortedDebts.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 italic">
+                      No hay deudas registradas para simular. ¡Registra tus obligaciones en la sección Gestor de Deudas!
                     </div>
-                  ))}
+                  ) : (
+                    sortedDebts.map((debt, index) => (
+                      <div 
+                        key={debt.id} 
+                        className={`p-5 rounded-2xl border transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4 ${
+                          index === 0 
+                            ? 'bg-amber-500/10 border-amber-500/50 shadow-lg shadow-amber-500/5' 
+                            : theme.subCardBg
+                        }`}
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm ${
+                            index === 0 ? 'bg-amber-500 text-slate-950 shadow-md' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                          }`}>
+                            #{index + 1}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className={`font-black text-sm ${theme.textMain}`}>{debt.name}</span>
+                              {index === 0 && (
+                                <span className="bg-amber-500/20 text-amber-600 dark:text-amber-300 text-[9px] font-black px-2.5 py-0.5 rounded-full border border-amber-500/30">
+                                  🎯 ATACAR HOY
+                                </span>
+                              )}
+                            </div>
+                            <p className={`text-xs mt-0.5 ${theme.textMuted}`}>
+                              {debt.entity} • Tasa: <strong className="text-amber-500 dark:text-amber-400">{debt.rate}% EA</strong>
+                              {debt.dueDate && <span className="ml-2 text-indigo-600 dark:text-amber-300 font-bold">📅 Día de pago: {debt.dueDate}</span>}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="text-left md:text-right w-full md:w-auto pt-3 md:pt-0 border-t md:border-t-0 border-slate-200 dark:border-slate-800">
+                          <span className="font-black text-base text-rose-500 dark:text-rose-400 block font-mono">{formatCOP(debt.balance)}</span>
+                          <span className={`text-[10px] font-medium ${theme.textMuted}`}>
+                            Cuota: {formatCOP(debt.minPayment)} {index === 0 && extraAbono > 0 && `+ ${formatCOP(extraAbono)} extra`}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
 
               </div>
@@ -1327,10 +1348,10 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
                   <div>
                     <h3 className="text-lg font-black text-amber-500 dark:text-amber-400 flex items-center gap-2">
-                      <span>🏛️</span> Préstamos a Plazo & Créditos Fijos (Avance Real)
+                      <span>🏛️</span> Préstamos a Plazo & Créditos Fijos
                     </h3>
                     <p className={`text-xs mt-1 ${theme.textMuted}`}>
-                      Seguimiento detallado de cuotas pactadas, cuotas canceladas y porcentaje real de cumplimiento.
+                      Seguimiento de cuotas pactadas y porcentaje real de cumplimiento.
                     </p>
                   </div>
 
@@ -1391,7 +1412,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                       {categorizedDebts.loans.length === 0 ? (
                         <tr>
                           <td colSpan="7" className="p-6 text-center text-slate-400 italic">
-                            No hay préstamos a plazo o cuotas fijas registrados.
+                            No hay préstamos a plazo registrados.
                           </td>
                         </tr>
                       ) : (
@@ -1584,7 +1605,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                     <span>☁️</span> Sincronización con Google Drive (Google Sheets)
                   </h3>
                   <p className={`text-xs mt-1 ${theme.textMuted}`}>
-                    Conecta esta aplicación web con tu hoja de cálculo personal en Google Drive. ¡La sincronización ahora ocurre de forma automática cada vez que realizas un cambio!
+                    Conecta tu hoja de cálculo "Finanzas Marlin" ingresando tu enlace /exec.
                   </p>
                 </div>
 
@@ -1615,7 +1636,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                       disabled={syncing}
                       className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-black text-xs py-3 px-4 rounded-xl flex-1 shadow-lg disabled:opacity-50 cursor-pointer"
                     >
-                      {syncing ? 'Subiendo...' : '☁️ Forzar Subida a Google Drive'}
+                      {syncing ? 'Subiendo...' : '☁️ Guardar Datos a Google Drive'}
                     </button>
 
                     <button
@@ -1628,11 +1649,17 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                   </div>
                 </div>
 
-                <div className={`p-4 rounded-2xl border text-xs space-y-2 ${theme.subCardBg}`}>
-                  <span className="font-black block uppercase text-amber-500">📌 Auto-Sincronización Activa:</span>
-                  <p className={theme.textMuted}>
-                    Al realizar cualquier modificación en deudas, ingresos o gastos, el sistema se sincronizará automáticamente con tu hoja de cálculo en segundo plano.
+                <div className={`p-5 rounded-2xl border space-y-3 bg-rose-500/5 border-rose-500/20`}>
+                  <span className="font-black text-xs uppercase text-rose-500 block">🧹 Reiniciar Todo en Cero:</span>
+                  <p className="text-xs text-slate-400">
+                    Si quieres vaciar la memoria local para empezar tus registros completamente limpios desde cero, usa este botón:
                   </p>
+                  <button
+                    onClick={handleClearAllData}
+                    className="bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 border border-rose-500/30 font-black text-xs py-2.5 px-4 rounded-xl cursor-pointer transition"
+                  >
+                    🗑️ Reiniciar todo en cero
+                  </button>
                 </div>
 
               </div>
@@ -1647,7 +1674,6 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
 
       </div>
 
-      {}
       {/* MODAL: AGREGAR DEUDA */}
       {showAddDebtModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
@@ -1662,7 +1688,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                 <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Nombre Deuda / Crédito</label>
                 <input 
                   type="text" 
-                  placeholder="Ej: Crédito Libre Inversión, Tarjeta Nu"
+                  placeholder="Ej: Tarjeta Nu, Crédito Vehículo"
                   value={newDebt.name} 
                   onChange={e => setNewDebt(p => ({ ...p, name: e.target.value }))} 
                   className={`w-full rounded-xl px-3 py-2 text-xs ${theme.inputBg}`} 
@@ -1675,7 +1701,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                   <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Entidad</label>
                   <input 
                     type="text" 
-                    placeholder="Ej: Bancolombia"
+                    placeholder="Ej: Nu Bank, Bancolombia"
                     value={newDebt.entity} 
                     onChange={e => setNewDebt(p => ({ ...p, entity: e.target.value }))} 
                     className={`w-full rounded-xl px-3 py-2 text-xs ${theme.inputBg}`} 
@@ -1700,7 +1726,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                   <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Saldo Actual ($ COP)</label>
                   <input 
                     type="number" 
-                    placeholder="Ej: 8000000"
+                    placeholder="Ej: 1500000"
                     value={newDebt.balance} 
                     onChange={e => setNewDebt(p => ({ ...p, balance: e.target.value }))} 
                     className={`w-full rounded-xl px-3 py-2 text-xs font-black ${theme.inputBg}`} 
@@ -1711,7 +1737,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                   <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Cuota Mínima</label>
                   <input 
                     type="number" 
-                    placeholder="Ej: 420000"
+                    placeholder="Ej: 120000"
                     value={newDebt.minPayment} 
                     onChange={e => setNewDebt(p => ({ ...p, minPayment: e.target.value }))} 
                     className={`w-full rounded-xl px-3 py-2 text-xs font-black ${theme.inputBg}`} 
@@ -1735,7 +1761,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                   <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Día de Pago</label>
                   <input 
                     type="text" 
-                    placeholder="Ej: 17"
+                    placeholder="Ej: 15"
                     value={newDebt.dueDate} 
                     onChange={e => setNewDebt(p => ({ ...p, dueDate: e.target.value }))} 
                     className={`w-full rounded-xl px-3 py-2 text-xs ${theme.inputBg}`} 
@@ -1745,7 +1771,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                   <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Total Cuotas</label>
                   <input 
                     type="number" 
-                    placeholder="Ej: 60"
+                    placeholder="Ej: 12"
                     value={newDebt.totalInstallments} 
                     onChange={e => setNewDebt(p => ({ ...p, totalInstallments: e.target.value }))} 
                     className={`w-full rounded-xl px-3 py-2 text-xs font-bold ${theme.inputBg}`} 
@@ -1755,7 +1781,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                   <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Cuotas Pagadas</label>
                   <input 
                     type="number" 
-                    placeholder="Ej: 46"
+                    placeholder="Ej: 0"
                     value={newDebt.paidInstallments} 
                     onChange={e => setNewDebt(p => ({ ...p, paidInstallments: e.target.value }))} 
                     className={`w-full rounded-xl px-3 py-2 text-xs font-bold ${theme.inputBg}`} 
@@ -1924,7 +1950,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                 <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Concepto / Fuente</label>
                 <input 
                   type="text" 
-                  placeholder="Ej: Producido Conducción, Honorarios"
+                  placeholder="Ej: Salario, Ventas, Trabajo Ocasional"
                   value={newIncome.concept} 
                   onChange={e => setNewIncome(p => ({ ...p, concept: e.target.value }))} 
                   className={`w-full rounded-xl px-3 py-2 text-xs ${theme.inputBg}`} 
@@ -2060,7 +2086,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                 <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Concepto del Gasto</label>
                 <input 
                   type="text" 
-                  placeholder="Ej: Seguridad Social, Cuota Hijo"
+                  placeholder="Ej: Mercado, Arriendo, Servicios"
                   value={newExpense.concept} 
                   onChange={e => setNewExpense(p => ({ ...p, concept: e.target.value }))} 
                   className={`w-full rounded-xl px-3 py-2 text-xs ${theme.inputBg}`} 
@@ -2112,7 +2138,7 @@ ${topTarget ? `• OBJETIVO PRIORITARIO: ${topTarget.name} (${topTarget.entity})
                 <label className={`block text-[10px] font-black uppercase mb-1 ${theme.textMuted}`}>Día de Pago</label>
                 <input 
                   type="text" 
-                  placeholder="Ej: 17 o 15, 30"
+                  placeholder="Ej: 5 o 15, 30"
                   value={newExpense.dueDate} 
                   onChange={e => setNewExpense(p => ({ ...p, dueDate: e.target.value }))} 
                   className={`w-full rounded-xl px-3 py-2 text-xs ${theme.inputBg}`} 
